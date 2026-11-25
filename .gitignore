@@ -7,3 +7,5 @@ downloads/*
 !downloads/.gitkeep
 test-results/
 *.log
+server-mod/.gradle/
+server-mod/build/

@@ -1,0 +1,14 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "All Rights Reserved"
+
+[[mods]]
+modId = "guciocraft_offline_whitelist"
+version = "1.0.0"
+displayName = "Guciocraft Offline Whitelist"
+
+[[dependencies.guciocraft_offline_whitelist]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1]"
+side = "SERVER"

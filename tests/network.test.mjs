@@ -37,7 +37,7 @@ async function fixture(t, onPacket) {
   return { host: '127.0.0.1', port: server.address().port, password: 'test-only-password', timeoutMs: 200 };
 }
 
-test('RCON: autoryzuje, składa fragmenty TCP i wysyła tylko whitelist add', localNetwork, async t => {
+test('RCON: autoryzuje, składa fragmenty TCP i wysyła tylko whitelist-offline add', localNetwork, async t => {
   const commands = [];
   const options = await fixture(t, (socket, id, type, text) => {
     if (type === 3) {
@@ -45,11 +45,11 @@ test('RCON: autoryzuje, składa fragmenty TCP i wysyła tylko whitelist add', lo
       const data = Buffer.concat([packet(id, 0), packet(id, 2)]);
       socket.write(data.subarray(0, 7)); setTimeout(() => socket.write(data.subarray(7)), 5);
     } else {
-      commands.push(text); socket.write(packet(id, 0, 'Added Gucio_1 to the whitelist'));
+      commands.push(text); socket.write(packet(id, 0, 'GUCIOCRAFT_WHITELIST added Gucio_1'));
     }
   });
   assert.equal(await addToWhitelist('Gucio_1', options), 'added');
-  assert.deepEqual(commands, ['whitelist add Gucio_1']);
+  assert.deepEqual(commands, ['whitelist-offline add Gucio_1']);
   await assert.rejects(addToWhitelist('Gucio\nstop', options));
   assert.equal(commands.length, 1);
 });
@@ -62,14 +62,14 @@ test('RCON: odmowa autoryzacji i timeout nie dają sukcesu', localNetwork, async
 });
 
 test('RCON: odrzuca nieznany wynik, obcy request ID i nieprawidłowy pakiet', localNetwork, async t => {
-  for (const reply of [packet(2, 0, 'Unknown command'), packet(999, 0, 'Added Gucio to the whitelist'), Buffer.from([255, 255, 255, 127])]) {
+  for (const reply of [packet(2, 0, 'Unknown command'), packet(999, 0, 'GUCIOCRAFT_WHITELIST added Gucio'), Buffer.from([255, 255, 255, 127])]) {
     const options = await fixture(t, (socket, id, type) => socket.write(type === 3 ? packet(id, 2) : reply));
     await assert.rejects(addToWhitelist('Gucio', options));
   }
 });
 
 test('RCON: nick już na whiteliście to poprawna odpowiedź idempotentna', localNetwork, async t => {
-  const options = await fixture(t, (socket, id, type) => socket.write(type === 3 ? packet(id, 2) : packet(id, 0, 'Player is already whitelisted')));
+  const options = await fixture(t, (socket, id, type) => socket.write(type === 3 ? packet(id, 2) : packet(id, 0, 'GUCIOCRAFT_WHITELIST already Gucio')));
   assert.equal(await addToWhitelist('Gucio', options), 'already');
 });
 

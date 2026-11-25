@@ -8,7 +8,7 @@ export default function ServerStatus() {
     const controller = new AbortController();
     async function update() {
       try {
-        const response = await fetch('/api/status', { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5_000)]) });
+        const response = await fetch('/api/status', { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]) });
         if (!response.ok) throw new Error('Status unavailable');
         const data = await response.json();
         if (active) setStatus(data);

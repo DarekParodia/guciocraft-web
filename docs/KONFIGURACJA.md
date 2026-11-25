@@ -113,7 +113,7 @@ Powyższy adres `10.0.0.20` jest przykładem — zastąp go adresem twojego Mine
 | `WHITELIST_ENABLED` | Na początku `false`, po sprawdzeniu wdrożenia `true`. Wartość musi być dokładnie `true`, aby włączyć zapis. |
 | `RCON_HOST` / `RCON_PORT` | Prywatny adres i port RCON. `127.0.0.1` oznacza ten sam LXC, nie host Proxmox ani inny kontener. |
 | `RCON_PASSWORD` | Sekret połączenia RCON, tylko po stronie backendu. |
-| `MC_HOST` / `MC_PORT` | Rzeczywisty adres i port gry dla odczytu statusu. To osobne połączenie od RCON. |
+| `MC_HOST` / `MC_PORT` | Rzeczywisty adres i port gry dla Server List Ping. Przy nieudanym pingu aplikacja próbuje odczytać liczniki przez skonfigurowane RCON. |
 | `DATABASE_PATH` | Bezwzględna ścieżka bazy na trwałym, zapisywalnym woluminie. |
 | `DOWNLOAD_DIR` | Bezwzględna ścieżka katalogu z archiwami. |
 | `BIND_ADDRESS` | Zostaw `127.0.0.1`, aby gracze nie mogli ominąć proxy. |
@@ -127,7 +127,7 @@ W katalogu wskazanym przez `DOWNLOAD_DIR` umieść:
 
 ```text
 /var/lib/guciocraft/downloads/
-├── guciocraft-modpack.zip
+├── guciocraft.zip
 └── guciocraft-prism-windows.zip
 ```
 
@@ -147,7 +147,7 @@ chmod 640 /var/lib/guciocraft/downloads/*.zip
 
 Brakujący lub pusty plik powoduje nieaktywny przycisk „Plik w przygotowaniu”. Endpoint udostępnia wyłącznie dwa skonfigurowane pliki, bez symlinków. ZIP-y można podmieniać bez buildu; zapisuj nową paczkę pod nazwą tymczasową, a po zakończeniu przenieś na docelową nazwę. Użytkownik odświeża stronę, aby zobaczyć aktualną dostępność.
 
-## 6. Włącz RCON w Minecraft
+## 6. Włącz RCON i zainstaluj mod whitelisty
 
 W `server.properties` serwera gry ustaw:
 
@@ -159,7 +159,9 @@ white-list=true
 enable-status=true
 ```
 
-Zrestartuj Minecraft. Sam plik `whitelist.json` pozostaw w zarządzaniu serwera; strona dodaje graczy komendą przez RCON.
+Mod jest przeznaczony dla serwera **Minecraft 1.21.1, NeoForge 21.1.267, Java 21**, działającego z `online-mode=false`. Zbuduj go poleceniem `gradle -p server-mod build` z JDK 21 i Gradle 9. Plik `server-mod/build/libs/guciocraft-offline-whitelist-1.0.0.jar` wgraj do katalogu `mods/` serwera Minecraft. Zrestartuj serwer gry przed wdrożeniem nowej wersji strony. Gracze mogą korzystać z dotychczasowej paczki.
+
+Mod rejestruje komendę `whitelist-offline add <nick>`. Tworzy profil offline z dosłownie przekazanego nicku i zapisuje go przez mechanizm whitelisty Minecrafta. `tester` i `Tester` mają osobne UUID. Kod strony potwierdza wyłącznie odpowiedź moda zawierającą dokładnie zgłoszony nick. Wcześniej zapisane wpisy pozostają w `whitelist.json`.
 
 Na firewallu Minecrafta/Proxmoxa:
 
@@ -255,7 +257,7 @@ Otwórz publiczny adres HTTPS w zwykłej przeglądarce oraz na telefonie.
 5. BlueMap działa wewnątrz strony i w nowej karcie.
 6. Port 3000 Next.js oraz port RCON nie są dostępne z internetu.
 7. Przy poprawnej konfiguracji proxy ustaw `WHITELIST_ENABLED=true` w `/etc/guciocraft.env` i wykonaj `systemctl restart guciocraft`.
-8. Dodaj testowy nick przez publiczną stronę. Sprawdź faktyczną whitelistę na serwerze, a następnie możliwość wejścia do gry.
+8. Dodaj `tester` przez publiczną stronę. Sprawdź, czy `whitelist.json` ma pole `name` równe `tester` i `uuid` równy `dd823a0c-b94a-369f-acd6-ddd287e3180e`. Następnie połącz się w grze jako `tester`.
 9. Sprawdź błędny nick i ponowny zapis tego samego nicku. Błąd nie może być przedstawiony jako sukces, a szybkie ponowienia powinny dostać limit z czasem oczekiwania.
 
 Po każdej zmianie `.env` zrestartuj usługę. Zmiana `.env` nie wymaga buildu. Zmiana kodu, CSS, `config/site.mjs` lub `next.config.mjs` wymaga buildu i restartu.
@@ -277,9 +279,9 @@ Po każdej zmianie `.env` zrestartuj usługę. Zmiana `.env` nie wymaga buildu. 
 | Formularz jest wyłączony | `WHITELIST_ENABLED`, publiczny `SITE_ORIGIN`, `CLIENT_IP_HEADER`, host/port RCON i hasło minimum 24 znaki; restart usługi. |
 | Zapis zwraca 403 | Publiczny protokół/domena nie zgadza się z `SITE_ORIGIN`, brak Origin lub żądanie z innej strony. |
 | Zapis zwraca 429 | Limity IP, nicku lub globalne. `Retry-After` podaje czas oczekiwania. Zweryfikuj rzeczywiste IP za proxy. |
-| Zapis zwraca 503 | Niedostępny RCON, zajęta usługa, zła konfiguracja proxy, niedostępna baza, niepotwierdzona odpowiedź komendy albo błąd profilu nicku. Sprawdź dzienniki Minecrafta i systemd. |
+| Zapis zwraca 503 | Sprawdź, czy mod jest załadowany na serwerze z `online-mode=false`, czy odpowiada RCON i czy serwer może zapisać `whitelist.json`. Sprawdź też dzienniki Minecrafta i systemd pod kątem problemów z proxy, konfiguracją i bazą SQLite. |
 | Pobranie jest nieaktywne | Nazwa i katalog ZIP, niezerowy rozmiar, prawa odczytu oraz brak symlinka. |
-| Status jest niedostępny | `enable-status`, adres DNS, firewall, rzeczywisty `MC_PORT`; to nie port RCON. |
+| Status jest niedostępny | Sprawdź `enable-status`, `MC_HOST`, `MC_PORT` i dostęp do portu gry z LXC aplikacji. Jeżeli publiczny adres działa spoza sieci, a LXC nie może się z nim połączyć, ustaw `MC_HOST` na prywatny adres serwera Minecraft dostępny z LXC. |
 | Wszyscy trafiają na wspólny limit | Nginx widzi tylko adres zewnętrznego proxy. Ustaw zaufane rzeczywiste IP dla konkretnego upstreamu. |
 | Brak CSS/JS po wdrożeniu | Uruchom pełne `npm run build`; sprawdź `.next/standalone/.next/static` i konfigurację proxy. |
 | Baza lub paczki „zniknęły” po restarcie | Użyj bezwzględnych ścieżek; startuj przez dołączony wrapper/usługę. |

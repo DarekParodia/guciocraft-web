@@ -3,8 +3,10 @@ import next from 'next';
 import assert from 'node:assert/strict';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Duplex } from 'node:stream';
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { site } from '../config/site.mjs';
 
 const app = next({ dev: false, dir: process.cwd(), quiet: true });
 const secretMarker = 'smoke-only-secret-not-for-real-rcon';
@@ -12,10 +14,11 @@ process.env.RCON_PASSWORD = secretMarker;
 await app.prepare();
 const handler = app.getRequestHandler();
 
-async function get(path) {
+async function get(path, method = 'GET') {
   const socket = new Duplex({ read() {}, write(chunk, encoding, callback) { callback(); } });
   const request = new IncomingMessage(socket);
-  request.method = 'GET'; request.url = path; request.headers = { host: 'localhost:3000' };
+  request.method = method; request.url = path; request.headers = { host: 'localhost:3000' };
+  if (path.startsWith('/api/downloads/')) request.headers['accept-encoding'] = 'gzip, br';
   const response = new ServerResponse(request);
   response.assignSocket(socket);
   const chunks = [];
@@ -27,7 +30,22 @@ async function get(path) {
   finally { socket.destroy(); }
 }
 
+const downloadDir = await mkdtemp(join(tmpdir(), 'guciocraft-smoke-'));
 try {
+  process.env.DOWNLOAD_DIR = downloadDir;
+  for (const [kind, filename] of Object.entries(site.downloads)) {
+    const payload = `testowy plik ${kind}`;
+    await writeFile(join(downloadDir, filename), payload);
+    const path = `/api/downloads/${kind}`;
+    const download = await get(path);
+    assert.equal(download.status, 200);
+    assert.equal(download.headers['content-length'], String(Buffer.byteLength(payload)));
+    assert.equal(download.body, payload);
+    const head = await get(path, 'HEAD');
+    assert.equal(head.status, 200);
+    assert.equal(head.headers['content-length'], download.headers['content-length']);
+    assert.equal(head.body, '');
+  }
   const page = await get('/');
   assert.equal(page.status, 200);
   for (const text of ['guciocraft', 'Dodaj do whitelisty', 'Pobierz i zagraj', 'mc.bshomelab.cc', 'mcmap.bshomelab.cc', 'nickname', 'lang="pl"']) assert.ok(page.body.includes(text), `Missing ${text}`);
@@ -46,6 +64,12 @@ try {
   // A file preview for restricted environments; no scripts, remote iframe or hydration.
   const preview = page.body.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '').replace(/<link\b[^>]*>/g, '').replace('</head>', `<style>${css}</style></head>`);
   await writeFile('test-results/preview.html', preview);
-  console.log('PASS: produkcyjny SSR, treści strony, brak nazw sekretów, API pobrań 404.');
+  console.log('PASS: produkcyjny SSR, treści strony, brak nazw sekretów, długości ZIP dla GET i HEAD oraz API pobrań 404.');
   console.log('Statyczny podgląd SSR: test-results/preview.html');
-} finally { await app.close(); }
+} catch (error) {
+  console.error(error);
+  process.exitCode = 1;
+} finally {
+  await app.close();
+  await rm(downloadDir, { recursive: true, force: true });
+}

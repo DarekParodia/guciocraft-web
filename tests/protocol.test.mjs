@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import { addToWhitelist } from '../lib/rcon.mjs';
-import { pingMinecraft } from '../lib/status.mjs';
+import { pingMinecraft, readMinecraftStatus } from '../lib/status.mjs';
 
 function frame(id, type, body = '') {
   const text = Buffer.from(body), bytes = Buffer.alloc(text.length + 14);
@@ -30,10 +30,10 @@ test('pakiety RCON: fragmenty autoryzacji i dokładna komenda whitelist', async 
       assert.equal(text, 'local-test-only');
       const response = Buffer.concat([frame(id, 0), frame(id, 2)]);
       socket.emit('data', response.subarray(0, 6)); socket.emit('data', response.subarray(6));
-    } else { commands.push(text); const response = frame(id, 0, 'Added Gucio to the whitelist'); socket.emit('data', response.subarray(0, 11)); socket.emit('data', response.subarray(11)); }
+    } else { commands.push(text); const response = frame(id, 0, 'GUCIOCRAFT_WHITELIST added tester'); socket.emit('data', response.subarray(0, 11)); socket.emit('data', response.subarray(11)); }
   });
-  assert.equal(await addToWhitelist('Gucio', options), 'added');
-  assert.deepEqual(commands, ['whitelist add Gucio']);
+  assert.equal(await addToWhitelist('tester', options), 'added');
+  assert.deepEqual(commands, ['whitelist-offline add tester']);
   await assert.rejects(addToWhitelist('Gucio\nstop', options));
 });
 
@@ -55,8 +55,16 @@ test('pakiety RCON: timeout i zerwane połączenie nie dają sukcesu', async t =
 });
 
 test('pakiety RCON: potwierdzenie istniejącego wpisu', async t => {
-  transport(t, (socket, data) => socket.emit('data', data.readInt32LE(8) === 3 ? frame(1, 2) : frame(2, 0, 'Player is already whitelisted')));
+  transport(t, (socket, data) => socket.emit('data', data.readInt32LE(8) === 3 ? frame(1, 2) : frame(2, 0, 'GUCIOCRAFT_WHITELIST already Gucio')));
   assert.equal(await addToWhitelist('Gucio', options), 'already');
+});
+
+test('pakiety RCON: inna pisownia lub odpowiedź vanilla nie potwierdzają profilu offline', async t => {
+  for (const reply of ['GUCIOCRAFT_WHITELIST added Tester', 'GUCIOCRAFT_WHITELIST already Tester', 'Added tester to the whitelist', 'Player is already whitelisted']) {
+    transport(t, (socket, data) => socket.emit('data', data.readInt32LE(8) === 3 ? frame(1, 2) : frame(2, 0, reply)));
+    await assert.rejects(addToWhitelist('tester', options), /unconfirmed whitelist result/);
+    t.mock.restoreAll();
+  }
 });
 
 test('pakiety statusu: fragmentacja, liczniki i brak listy graczy', async t => {
@@ -77,4 +85,45 @@ test('pakiety statusu: odmowa połączenia offline, timeout nieznany', async t =
   assert.equal((await pingMinecraft({ host: 'test.invalid', port: 25565 })).state, 'offline');
   t.mock.restoreAll(); transport(t, () => {});
   assert.equal((await pingMinecraft({ host: 'test.invalid', port: 25565, timeoutMs: 10 })).state, 'unknown');
+});
+
+test('status: nieudany ping korzysta z RCON list i zwraca wyłącznie liczniki', async t => {
+  const hosts = [];
+  const socket = new EventEmitter();
+  socket.destroy = () => {};
+  socket.write = data => {
+    const text = data.subarray(12, -2).toString();
+    const auth = data.readInt32LE(8) === 3;
+    assert.equal(text, auth ? 'local-test-only' : 'list');
+    queueMicrotask(() => socket.emit('data', auth ? frame(1, 2) : frame(2, 0, 'There are 2 of a max of 100 players online: First, Second')));
+  };
+  t.mock.method(net, 'createConnection', ({ host }) => {
+    hosts.push(host);
+    if (host === 'game.invalid') {
+      const game = new EventEmitter();
+      game.destroy = () => {};
+      queueMicrotask(() => game.emit('error', { code: 'EHOSTUNREACH' }));
+      return game;
+    }
+    queueMicrotask(() => socket.emit('connect'));
+    return socket;
+  });
+  const { checkedAt, ...status } = await readMinecraftStatus({ minecraft: { host: 'game.invalid' }, rcon: options });
+  assert.ok(checkedAt);
+  assert.deepEqual(status, { state: 'online', online: 2, max: 100 });
+  assert.deepEqual(hosts, ['game.invalid', options.host]);
+});
+
+test('status: przy nieprawidłowej odpowiedzi RCON zachowuje wynik pingu', async t => {
+  const game = new EventEmitter();
+  game.destroy = () => {};
+  transport(t, (socket, data) => socket.emit('data', data.readInt32LE(8) === 3 ? frame(1, 2) : frame(2, 0, 'Unknown command')));
+  const connectRcon = net.createConnection;
+  t.mock.method(net, 'createConnection', config => {
+    if (config.host !== 'game.invalid') return connectRcon(config);
+    queueMicrotask(() => game.emit('error', { code: 'ECONNREFUSED' }));
+    return game;
+  });
+  const status = await readMinecraftStatus({ minecraft: { host: 'game.invalid' }, rcon: options });
+  assert.equal(status.state, 'offline');
 });

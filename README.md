@@ -25,7 +25,7 @@ npm start
 ## Dane i paczki
 
 - `config/site.mjs`: adresy, publiczne informacje o własnej paczce, zalecana pamięć i nazwy plików. Nieuzupełnione informacje o wersji i RAM są ukrywane. Po zmianach przebuduj aplikację.
-- `downloads/guciocraft-modpack.zip`: zgodny ZIP instancji/modpacka do importu w Prism; nie sam folder `mods` i nie serverpack.
+- `downloads/guciocraft.zip`: eksport instancji lub modpacka do importu w Prism.
 - `downloads/guciocraft-prism-windows.zip`: gotowy, wypakowywany zestaw portable Prism dla Windows. Przygotuj czystą kopię bez zapisanych kont i tokenów. Każdy gracz dodaje swoje konto.
 - `DOWNLOAD_DIR` pozwala trzymać paczki poza kodem. Pliki należy publikować atomowo: zapisz pod tymczasową nazwą i dopiero potem zmień nazwę na docelową. Archiwa puste, brakujące lub będące symlinkiem nie są udostępniane.
 - Wersja własnej paczki i RAM są celowo do uzupełnienia po sprawdzeniu twojej konfiguracji. Portable jest dla Windows; import do Prism opisany również dla Linux/macOS.
@@ -33,6 +33,8 @@ npm start
 Przyciski pobierania aktywują się, gdy odpowiednie pliki istnieją. Archiwa są strumieniowane, bez ładowania całego ZIP-a do pamięci. Po podmianie paczek odśwież stronę. Endpointy nie przyjmują ścieżek od gracza.
 
 ## Whitelista
+
+Automatyczne zapisy wymagają [moda serwerowego dla NeoForge 1.21.1](docs/KONFIGURACJA.md#6-włącz-rcon-i-zainstaluj-mod-whitelisty) i serwera Minecraft w trybie offline.
 
 W środowisku serwera ustaw:
 
@@ -58,7 +60,7 @@ Jeżeli przed Nginx masz Cloudflare/inny reverse proxy, skonfiguruj zaufane adre
 ### Zabezpieczenia
 
 - Pełna walidacja ASCII 3–16 znaków: litery, cyfry i `_`; odrzucanie białych znaków, Unicode, NUL, dodatkowych pól i treści JSON >512 B.
-- Stała operacja `whitelist add <nick>` przez TCP. Brak shella i publicznego endpointu wykonywania dowolnych komend. Brak `op`, usuwania banów i zmian konfiguracji.
+- Stała operacja `whitelist-offline add <nick>` przez TCP. Brak shella i publicznego endpointu wykonywania dowolnych komend. Brak `op`, usuwania banów i zmian konfiguracji.
 - Ślizgowe limity w SQLite: 10 prób/min/IP (także błędnych), 5 operacji/h/IP, 1 operacja/min/nick, 20 operacji/min łącznie. Rezerwacja atomowa przed połączeniem RCON. Nieudana operacja też zużywa budżet.
 - Dwa jednoczesne połączenia RCON, 3 s timeout całej operacji, ograniczona długość pakietów i sprawdzanie ID odpowiedzi. Nie ma nieograniczonej kolejki; zajęta usługa zwraca 503.
 - Limitowane operacje i krótki log przetrwają restart. Klucze IP/nicków limitera to HMAC z kluczem zachowanym w bazie, bez surowego IP. Zdarzenia limitera są usuwane po 24 h, log nick/wynik po 7 dniach przy kolejnym zgłoszeniu.
@@ -67,11 +69,11 @@ Jeżeli przed Nginx masz Cloudflare/inny reverse proxy, skonfiguruj zaufane adre
 
 RCON jest nieszyfrowany i daje szerokie uprawnienia konsoli. Firewall serwera Minecraft powinien dopuszczać port RCON **wyłącznie z adresu backendu**. Między niezaufanymi sieciami użyj VPN/tunelu. Kod ogranicza wykonywane operacje, ale standardowy RCON nie ma osobnego konta z uprawnieniami tylko do whitelisty.
 
-Formularz jest **publicznym samodzielnym zapisem**: każdy może dodać dowolny poprawny nick. Nie potwierdza, kto jest jego właścicielem. Usunięty z whitelisty nick może zostać dodany ponownie; ban nadal obowiązuje. Limity IP nie powstrzymują ataku z wielu adresów — przy takim ruchu potrzebna będzie dodatkowa ochrona na proxy lub weryfikacja bota.
+Formularz jest **publicznym samodzielnym zapisem**. Każdy może dodać dowolny poprawny nick. Aplikacja przekazuje nick przez RCON, a mod wylicza profil offline z dokładnie tej pisowni, bez wysyłania zapytań do Mojanga. Usunięty z whitelisty nick może zostać dodany ponownie. Ban powiązany z UUID nadal obowiązuje.
 
 ## Status i mapa
 
-Status korzysta z osobnego protokołu Server List Ping, nie z RCON. Współdzieli trwający odczyt i buforuje wynik 30 s; nie publikuje listy nicków. Odmowa połączenia oznacza offline, a timeout/błąd DNS stan nieznany. Dla serwera z rekordem SRV lub nietypowym portem wpisz rzeczywisty host i port w `MC_HOST`/`MC_PORT` — automatyczne rozwiązywanie SRV nie jest zaimplementowane.
+Status korzysta z Server List Ping. Jeśli port gry nie odpowiada, backend próbuje odczytać liczniki przez komendę RCON `list`, o ile skonfigurowano RCON. Publiczne API zwraca tylko liczniki i stan serwera, a wynik jest buforowany przez 30 s. Przy niestandardowym porcie lub rekordzie SRV wpisz rzeczywisty host i port gry w `MC_HOST` i `MC_PORT`.
 
 BlueMap `https://mcmap.bshomelab.cc` ładuje się dopiero w pobliżu sekcji mapy. Host BlueMap musi pozwalać na osadzenie na domenie strony (CSP `frame-ancestors`, X-Frame-Options). Stały link otwiera pełną mapę w nowej karcie. Przeglądarka nie pozwala niezawodnie wykryć wszystkich błędów obcego iframe, dlatego link jest dostępny zawsze.
 
