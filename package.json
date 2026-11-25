@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "next dev --webpack --hostname 127.0.0.1",
     "build": "next build --webpack && node scripts/prepare-standalone.mjs",
-    "start": "node --env-file-if-exists=.env.local scripts/start.mjs",
+    "start": "bun scripts/start.mjs",
     "test": "node --test --test-isolation=none tests/*.test.mjs",
     "smoke": "node scripts/smoke.mjs"
   },
